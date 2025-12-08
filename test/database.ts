@@ -9,6 +9,8 @@ import { AuthMigrations } from '@riao/iam/auth/auth-migrations';
 import { maindb } from '../database/main';
 import { DatabasePostgres18 } from '@riao/postgres';
 
+export { maindb } from '../database/main';
+
 export function createDatabase(name: string): Database {
 	return new (class extends DatabasePostgres18 {
 		override name = name;
