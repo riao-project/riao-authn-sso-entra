@@ -30,21 +30,6 @@ npm run test:dev
 | "Invalid client secret" | Wrong secret | Regenerate in Azure Portal |
 | "Invalid redirect_uri" | URI mismatch | Must exactly match app registration |
 
-## Filter Tests
-
-```bash
-# Run only integration tests
-npm run test:dev -- --grep="Integration"
-
-# Run only unit tests
-npm run test:dev -- --grep="^EntraAuthentication" --invert
-
-# Run only real credential tests
-npm run test:dev -- --grep="real credentials"
-
-# Run only security tests
-npm run test:dev -- --grep="Security"
-```
 
 ## Documentation
 
