@@ -1,5 +1,5 @@
 {
-	"name": "authn-sso-entra",
+	"name": "@riao/authn-sso-entra",
 	"version": "1.0.0",
 	"description": "authn-sso-entra",
 	"private": "true",
@@ -22,6 +22,7 @@
 		"publish": "npm run script -- publish"
 	},
 	"dependencies": {
+		"@riao/authn-sso": "^1.0.0",
 		"@riao/dbal": "^3.8.0",
 		"@riao/iam": "^3.0.0"
 	},
@@ -29,10 +30,14 @@
 		"@istanbuljs/nyc-config-typescript": "^1.0.2",
 		"@riao/cli": "^3.0.1",
 		"@riao/postgres": "^3.5.0",
+		"@types/express": "^5.0.6",
+		"@types/express-session": "^1.18.2",
 		"@types/jasmine": "^5.1.4",
 		"@types/node": "^18.19.39",
 		"@typescript-eslint/eslint-plugin": "^7.13.1",
 		"eslint": "^8.57.0",
+		"express": "^5.2.1",
+		"express-session": "^1.18.2",
 		"jasmine": "^5.1.0",
 		"nyc": "^17.0.0",
 		"prettier": "^3.3.2",
@@ -47,13 +52,30 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/authn-sso-entra/authn-sso-entra.git"
+		"url": "git+https://github.com/riao-project/authn-sso-entra.git"
 	},
 	"author": "authn-sso-entra",
 	"license": "MIT",
 	"bugs": {
-		"url": "https://github.com/authn-sso-entra/authn-sso-entra/issues"
+		"url": "https://github.com/riao-project/authn-sso-entra/issues"
 	},
-	"homepage": "https://github.com/authn-sso-entra/authn-sso-entra#readme",
-	"keywords": []
+	"homepage": "https://github.com/riao-project/authn-sso-entra#readme",
+	"keywords": [
+		"riao",
+		"iam",
+		"authentication",
+		"sso",
+		"single-sign-on",
+		"entra",
+		"microsoft",
+		"azure",
+		"ad",
+		"active-directory",
+		"graph",
+		"oauth2",
+		"openid",
+		"saml",
+		"driver",
+		"openid-connect"
+	]
 }
