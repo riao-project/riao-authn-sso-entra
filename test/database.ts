@@ -86,6 +86,6 @@ export async function runMigrationsDown(
 export let db: Database;
 
 export async function initTestDatabase() {
-	db = createDatabase('authn-passwordtest-db');
+	db = createDatabase('authn-sso-entra-db');
 	await db.init();
 }
