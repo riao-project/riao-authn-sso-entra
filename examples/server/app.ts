@@ -3,7 +3,6 @@
 import express, { NextFunction, Request, Response } from 'express';
 import session from 'express-session';
 import { EntraAuthentication } from '../../src/authentication-entra';
-import crypto from 'crypto';
 import { env } from './env';
 import { maindb } from '../../database/main';
 import { createDatabase, runMigrations } from '../../test/database';
@@ -35,6 +34,7 @@ declare module 'express-session' {
 	interface SessionData {
 		userId?: string;
 		user?: User;
+		oauthState?: string;
 	}
 }
 
@@ -88,21 +88,20 @@ const entraAuth = new EntraAuthentication({
  * Step 1: Initiate Entra login
  * User clicks "Login with Entra" → redirected to Entra login page
  */
-app.get('/auth/entra/login', (req: Request, res: Response): void => {
-	// Generate a random state for CSRF protection
-	const state = crypto.randomUUID();
-
-	// Store state in session (verify it on callback)
-	req.session.save((err) => {
-		if (err) {
-			res.status(500).json({ error: 'Session error' });
-			return;
-		}
-
-		// Get authorization URL and redirect user to Entra
+app.get('/auth/entra/login', async (req: Request, res: Response) => {
+	try {
+		const state = await entraAuth.generateState();
+		req.session.oauthState = state;
 		const authUrl = entraAuth.getAuthorizationUrl(state);
+		await new Promise<void>((resolve, reject) => {
+			req.session.save((error) => error ? reject(error) : resolve());
+		});
 		res.redirect(authUrl);
-	});
+	}
+	catch (error) {
+		console.error('Failed to initiate Entra authentication:', error);
+		res.redirect('/login?error=authentication_unavailable');
+	}
 });
 
 /**
@@ -133,30 +132,41 @@ app.get(
 			res.redirect('/login?error=missing_state');
 			return;
 		}
+		if (!req.session.oauthState || req.session.oauthState !== state) {
+			res.redirect('/login?error=invalid_state');
+			return;
+		}
 
 		try {
+			delete req.session.oauthState;
+			await new Promise<void>((resolve, reject) => {
+				req.session.save((saveError) =>
+					saveError ? reject(saveError) : resolve()
+				);
+			});
+
 			// Exchange authorization code for tokens and get user info
-			const principal = await entraAuth.authenticate({ code });
+			const principal = await entraAuth.authenticate({ code, state });
 
 			if (!principal) {
 				res.redirect('/login?error=authentication_failed');
 				return;
 			}
 
-			// Store user ID in session
+			await new Promise<void>((resolve, reject) => {
+				req.session.regenerate((regenerateError) =>
+					regenerateError ? reject(regenerateError) : resolve()
+				);
+			});
 			req.session.userId = String(principal.id);
 			req.session.user = principal as User;
 
-			// Save session
-			req.session.save((err) => {
-				if (err) {
-					res.status(500).json({ error: 'Session error' });
-					return;
-				}
-
-				// Redirect to dashboard or requested page
-				res.redirect('/dashboard');
+			await new Promise<void>((resolve, reject) => {
+				req.session.save((saveError) =>
+					saveError ? reject(saveError) : resolve()
+				);
 			});
+			res.redirect('/dashboard');
 		}
 		catch (error) {
 			console.error('Authentication error:', error);

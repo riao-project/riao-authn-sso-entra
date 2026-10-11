@@ -136,7 +136,7 @@ Visit `http://localhost:3000`
 ```
 GET /auth/entra/login
 ↓
-Generates random state (CSRF protection)
+Generates and stores callback state in the initiating browser session
 Redirects user to Entra login URL
 ```
 
@@ -150,14 +150,20 @@ Entra validates and redirects back with authorization code
 ```
 GET /auth/entra/callback?code=...&state=...
 ↓
-Validate state matches (CSRF check)
+Validate and consume the browser-bound state
 Exchange code for access token (backend-to-backend)
 Fetch user info from Microsoft Graph
 Create or link principal
 ↓
-Store user ID in session
+Regenerate the session ID, then store the authenticated principal
 Redirect to dashboard
 ```
+
+The callback is accepted only in the browser session that initiated sign-in.
+The sample removes and persists that state before contacting Entra, rejects
+replayed or mismatched callbacks, and rotates the session ID before storing the
+authenticated principal. Operational errors are logged server-side while the
+browser receives only a generic failure message.
 
 ### 4. Subsequent requests
 ```
