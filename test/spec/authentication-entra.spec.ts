@@ -18,7 +18,7 @@ describe('EntraAuthentication', () => {
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		db: null as any,
 		clientId: testEnv.ENTRA_CLIENT_ID,
-		clientSecret: testEnv.ENTRA_CLIENT_SECRET,
+		clientSecret: 'test-client-secret',
 		tenantId: testEnv.ENTRA_TENANT_ID,
 		redirectUri: testEnv.ENTRA_REDIRECT_URI,
 		scopes: [
@@ -51,7 +51,7 @@ describe('EntraAuthentication', () => {
 	describe('Constructor', () => {
 		it('should initialize with provided options', () => {
 			expect(entraAuth['clientId']).toBe(testEnv.ENTRA_CLIENT_ID);
-			expect(entraAuth['clientSecret']).toBe(testEnv.ENTRA_CLIENT_SECRET);
+			expect(entraAuth['clientSecret']).toBe(mockEntraOptions.clientSecret);
 			expect(entraAuth['tenantId']).toBe(testEnv.ENTRA_TENANT_ID);
 			expect(entraAuth['redirectUri']).toBe(testEnv.ENTRA_REDIRECT_URI);
 		});
@@ -228,7 +228,7 @@ describe('EntraAuthentication', () => {
 
 			expect(body).toContain(`client_id=${testEnv.ENTRA_CLIENT_ID}`);
 			expect(body).toContain(
-				`client_secret=${testEnv.ENTRA_CLIENT_SECRET}`
+				`client_secret=${mockEntraOptions.clientSecret}`
 			);
 			expect(body).toContain('code=test-code');
 			expect(body).toContain(
@@ -270,7 +270,7 @@ describe('EntraAuthentication', () => {
 				fail('Expected error to be thrown');
 			}
 			catch (error) {
-				expect((error as Error).message).toBe('Network error');
+				expect((error as Error).message).toContain('provider unavailable');
 			}
 		});
 	});
@@ -405,9 +405,7 @@ describe('EntraAuthentication', () => {
 					'Failed to fetch Entra user info'
 				);
 				expect((error as Error).message).toContain('403');
-				expect((error as Error).message).toContain(
-					'Microsoft Graph permissions'
-				);
+				expect((error as Error).message).not.toContain('Error details');
 			}
 		});
 
@@ -498,7 +496,7 @@ describe('EntraAuthentication', () => {
 
 			expect(body).toContain(`client_id=${testEnv.ENTRA_CLIENT_ID}`);
 			expect(body).toContain(
-				`client_secret=${testEnv.ENTRA_CLIENT_SECRET}`
+				`client_secret=${mockEntraOptions.clientSecret}`
 			);
 		});
 
@@ -623,7 +621,7 @@ describe('EntraAuthentication', () => {
 				expect((error as Error).message).toContain(
 					'Failed to fetch Entra user info'
 				);
-				expect((error as Error).message).toContain('API permissions');
+				expect((error as Error).message).not.toContain('Error details');
 			}
 		});
 

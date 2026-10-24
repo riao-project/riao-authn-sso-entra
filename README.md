@@ -98,7 +98,7 @@ ENTRA_REDIRECT_URI=https://yourdomain.com/auth/entra/callback
 ### Get Authorization URL
 
 ```typescript
-const state = crypto.randomUUID();
+const state = await entraAuth.generateState();
 const authUrl = entraAuth.getAuthorizationUrl(state);
 // Redirect user to authUrl
 ```
@@ -106,7 +106,8 @@ const authUrl = entraAuth.getAuthorizationUrl(state);
 ### Handle Callback
 
 ```typescript
-const principal = await entraAuth.authenticate({ code });
+// Pass the callback state when present for CSRF validation.
+const principal = await entraAuth.authenticate({ code, state });
 if (principal) {
 	// User authenticated successfully
 	// Create session, JWT token, etc.
@@ -177,14 +178,48 @@ For a complete list of available scopes, see [Microsoft Entra permissions and co
 
 ## Error Handling
 
-All methods throw on network/API errors. Wrap calls in try-catch:
+Version 3 requires `@riao/authn-sso ^3.0.0` and `@riao/iam ^5.0.0`.
+Before admitting v3 authentication traffic, run IAM migrations first, then
+the full ordered SSO migration package. Code is required. State remains
+optional for API compatibility; browser authorization flows should generate
+and return it. When supplied, it is validated and consumed before exchange.
+Consumption is not atomic across concurrent callbacks, and state is not bound
+to a browser session. The driver does not regenerate the application's session
+after authentication.
+Expected rejection (including invalid/expired/replayed state and inactive
+principals) returns `null`. Operational failures still throw.
+Do not provision replacement identities for deactivated principals.
+
+All inherited options are forwarded, including encryption keys,
+`stateExpiryMinutes`, and `authenticationProtection`. Protection runs before
+provider calls, denial
+returns `null` without outcome callbacks, expected rejection records failure,
+and success is recorded after token persistence. Operational errors do not
+record failure. Attempts are provider-scoped (`sso:entra`, subject `entra`);
+they contain no credentials.
+
+Direct exchange/refresh APIs throw `ProviderAuthenticationRejectedError` for
+known OAuth rejection; Graph invalid-token responses are also rejections.
+Transport errors, outages, client configuration, throttling and Graph
+permission failures remain operational errors. Provider HTTP error messages
+omit response bodies.
+`AuthenticationBlockedError` carries optional `retryAfterSeconds` on direct
+APIs; `authenticate` returns only `null` for blocked attempts. At an HTTP
+boundary, map typed rejection/blocking to generic auth/rate-limit responses
+and operational errors to generic unavailable responses. Never expose raw errors.
 
 ```typescript
 try {
-	const principal = await entraAuth.authenticate({ code });
+	const principal = await entraAuth.authenticate({ code, state });
+	if (principal) {
+		// Store the principal in the application session.
+	}
 }
 catch (error) {
-	console.error('Authentication failed:', error);
+	console.error('Entra authentication operation failed', {
+		errorType: error instanceof Error ? error.name : typeof error,
+	});
+	// Return a generic unavailable response, not provider error details.
 }
 ```
 

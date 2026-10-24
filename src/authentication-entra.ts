@@ -3,6 +3,7 @@ import {
 	SSOUserInfo,
 	SSOTokenResponse,
 	SSOAuthenticationOptions,
+	throwProviderResponseError,
 } from '@riao/authn-sso';
 import { Principal } from '@riao/iam';
 
@@ -33,7 +34,7 @@ export class EntraAuthentication<
 
 	constructor(options: EntraAuthenticationOptions) {
 		super({
-			db: options.db,
+			...options,
 			provider: 'entra',
 		});
 		this.clientId = options.clientId;
@@ -98,14 +99,11 @@ export class EntraAuthentication<
 				scope: this.scopes.join(' '),
 			}).toString(),
 		});
-
 		if (!response.ok) {
-			throw new Error(
-				`Entra token exchange failed: ${response.status}` +
-					` ${response.statusText}`
+			await throwProviderResponseError(
+				'Entra token exchange', response
 			);
 		}
-
 		return response.json() as Promise<SSOTokenResponse>;
 	}
 
@@ -113,28 +111,20 @@ export class EntraAuthentication<
 	 * Fetch user information from Microsoft Graph API
 	 */
 	protected async getUserInfo(accessToken: string): Promise<SSOUserInfo> {
-		const response = await fetch('https://graph.microsoft.com/v1.0/me', {
-			method: 'GET',
-			headers: {
-				Authorization: `Bearer ${accessToken}`,
-				'Content-Type': 'application/json',
-			},
-		});
-
+		const response = await fetch(
+			'https://graph.microsoft.com/v1.0/me', {
+				method: 'GET',
+				headers: {
+					Authorization: `Bearer ${accessToken}`,
+					'Content-Type': 'application/json',
+				},
+			}
+		);
 		if (!response.ok) {
-			const errorBody = await response.text();
-			throw new Error(
-				`Failed to fetch Entra user info: ${response.status}` +
-					` ${response.statusText}. ` +
-					'This usually means the app doesn\'t have ' +
-					'Microsoft Graph permissions. ' +
-					'Ensure the app registration has the following ' +
-					'API permissions granted: ' +
-					'"User.Read" (Microsoft Graph > Delegated permissions). ' +
-					`Error details: ${errorBody}`
+			await throwProviderResponseError(
+				'Entra user info', response, true
 			);
 		}
-
 		const userData = (await response.json()) as {
 			id: string;
 			userPrincipalName?: string;
@@ -177,14 +167,11 @@ export class EntraAuthentication<
 				scope: this.scopes.join(' '),
 			}).toString(),
 		});
-
 		if (!response.ok) {
-			throw new Error(
-				`Entra token refresh failed: ${response.status}` +
-					` ${response.statusText}`
+			await throwProviderResponseError(
+				'Entra token refresh', response
 			);
 		}
-
 		return response.json() as Promise<SSOTokenResponse>;
 	}
 }
