@@ -119,7 +119,7 @@ describe('EntraAuthentication - Integration Tests', () => {
 					}
 					catch (error) {
 						expect((error as Error).message).toContain(
-							'Failed to fetch Entra user info'
+							'Entra user info failed: 401'
 						);
 					}
 				});
