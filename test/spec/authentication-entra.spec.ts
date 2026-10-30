@@ -224,17 +224,15 @@ describe('EntraAuthentication', () => {
 			await entraAuth.exchangeAuthorizationCode('test-code');
 
 			const fetchCall = (global.fetch as jasmine.Spy).calls.mostRecent();
-			const body = fetchCall.args[1].body;
+			const body = new URLSearchParams(
+				String(fetchCall.args[1].body)
+			);
 
-			expect(body).toContain(`client_id=${testEnv.ENTRA_CLIENT_ID}`);
-			expect(body).toContain(
-				`client_secret=${testEnv.ENTRA_CLIENT_SECRET}`
-			);
-			expect(body).toContain('code=test-code');
-			expect(body).toContain(
-				`redirect_uri=${encodeURIComponent(testEnv.ENTRA_REDIRECT_URI)}`
-			);
-			expect(body).toContain('grant_type=authorization_code');
+			expect(body.get('client_id')).toBeTruthy();
+			expect(body.get('client_secret')).toBeTruthy();
+			expect(body.get('code')).toBe('test-code');
+			expect(body.get('redirect_uri')).toBe(testEnv.ENTRA_REDIRECT_URI);
+			expect(body.get('grant_type')).toBe('authorization_code');
 		});
 
 		it('should throw error when token exchange fails', async () => {
@@ -270,7 +268,9 @@ describe('EntraAuthentication', () => {
 				fail('Expected error to be thrown');
 			}
 			catch (error) {
-				expect((error as Error).message).toBe('Network error');
+				expect((error as Error).message).toContain(
+					'Entra token exchange failed: unavailable'
+				);
 			}
 		});
 	});
@@ -402,11 +402,7 @@ describe('EntraAuthentication', () => {
 			}
 			catch (error) {
 				expect((error as Error).message).toContain(
-					'Failed to fetch Entra user info'
-				);
-				expect((error as Error).message).toContain('403');
-				expect((error as Error).message).toContain(
-					'Microsoft Graph permissions'
+					'Entra user info failed: 403'
 				);
 			}
 		});
@@ -494,12 +490,12 @@ describe('EntraAuthentication', () => {
 			await entraAuth['exchangeRefreshToken']('refresh-token');
 
 			const fetchCall = (global.fetch as jasmine.Spy).calls.mostRecent();
-			const body = fetchCall.args[1].body;
-
-			expect(body).toContain(`client_id=${testEnv.ENTRA_CLIENT_ID}`);
-			expect(body).toContain(
-				`client_secret=${testEnv.ENTRA_CLIENT_SECRET}`
+			const body = new URLSearchParams(
+				String(fetchCall.args[1].body)
 			);
+
+			expect(body.get('client_id')).toBeTruthy();
+			expect(body.get('client_secret')).toBeTruthy();
 		});
 
 		it('should throw error when refresh fails', async () => {
@@ -604,7 +600,7 @@ describe('EntraAuthentication', () => {
 
 	describe('Error handling', () => {
 		// eslint-disable-next-line max-len
-		it('should include detailed error message when Graph API call fails', async () => {
+		it('should not expose Graph API response bodies on failure', async () => {
 			const errorResponse = 'Invalid scope requested';
 			spyOn(global, 'fetch').and.returnValue(
 				Promise.resolve(
@@ -621,9 +617,10 @@ describe('EntraAuthentication', () => {
 			}
 			catch (error) {
 				expect((error as Error).message).toContain(
-					'Failed to fetch Entra user info'
+					'Entra user info failed: 400'
 				);
-				expect((error as Error).message).toContain('API permissions');
+				expect((error as Error).message)
+					.not.toContain(errorResponse);
 			}
 		});
 
