@@ -35,6 +35,7 @@ declare module 'express-session' {
 		userId?: string;
 		user?: User;
 		oauthState?: string;
+		oauthStateBinding?: string;
 	}
 }
 
@@ -90,8 +91,9 @@ const entraAuth = new EntraAuthentication({
  */
 app.get('/auth/entra/login', async (req: Request, res: Response) => {
 	try {
-		const state = await entraAuth.generateState();
+		const { state, stateBinding } = await entraAuth.generateState();
 		req.session.oauthState = state;
+		req.session.oauthStateBinding = stateBinding;
 		const authUrl = entraAuth.getAuthorizationUrl(state);
 		await new Promise<void>((resolve, reject) => {
 			req.session.save((error) => error ? reject(error) : resolve());
@@ -111,9 +113,9 @@ app.get('/auth/entra/login', async (req: Request, res: Response) => {
 app.get(
 	'/auth/entra/callback',
 	async (req: Request, res: Response): Promise<void> => {
-		const code = req.query['code'] as string | undefined;
-		const state = req.query['state'] as string | undefined;
-		const error = req.query['error'] as string | undefined;
+		const code = req.query['code'];
+		const state = req.query['state'];
+		const error = req.query['error'];
 
 		// Check for errors from Entra
 		if (error) {
@@ -123,22 +125,29 @@ app.get(
 		}
 
 		// Validate code and state
-		if (!code || typeof code !== 'string') {
+		if (typeof code !== 'string' || !code) {
 			res.redirect('/login?error=missing_code');
 			return;
 		}
 
-		if (!state || typeof state !== 'string') {
+		if (typeof state !== 'string' || !state) {
 			res.redirect('/login?error=missing_state');
 			return;
 		}
-		if (!req.session.oauthState || req.session.oauthState !== state) {
+		const stateBinding = req.session.oauthStateBinding;
+		if (
+			!req.session.oauthState ||
+			req.session.oauthState !== state ||
+			typeof stateBinding !== 'string' ||
+			!stateBinding
+		) {
 			res.redirect('/login?error=invalid_state');
 			return;
 		}
 
 		try {
 			delete req.session.oauthState;
+			delete req.session.oauthStateBinding;
 			await new Promise<void>((resolve, reject) => {
 				req.session.save((saveError) =>
 					saveError ? reject(saveError) : resolve()
@@ -146,7 +155,11 @@ app.get(
 			});
 
 			// Exchange authorization code for tokens and get user info
-			const principal = await entraAuth.authenticate({ code, state });
+			const principal = await entraAuth.authenticate({
+				code,
+				state,
+				stateBinding,
+			});
 
 			if (!principal) {
 				res.redirect('/login?error=authentication_failed');
