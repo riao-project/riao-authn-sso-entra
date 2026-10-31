@@ -159,12 +159,6 @@ Regenerate the session ID, then store the authenticated principal
 Redirect to dashboard
 ```
 
-The callback is accepted only in the browser session that initiated sign-in.
-The sample removes and persists that state before contacting Entra, rejects
-replayed or mismatched callbacks, and rotates the session ID before storing the
-authenticated principal. Operational errors are logged server-side while the
-browser receives only a generic failure message.
-
 ### 4. Subsequent requests
 ```
 GET /dashboard
