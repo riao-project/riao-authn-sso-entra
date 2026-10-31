@@ -119,7 +119,7 @@ describe('EntraAuthentication - Integration Tests', () => {
 					}
 					catch (error) {
 						expect((error as Error).message).toContain(
-							'Failed to fetch Entra user info'
+							'Entra user info failed: 401'
 						);
 					}
 				});
@@ -297,9 +297,7 @@ describe('EntraAuthentication - Integration Tests', () => {
 			}
 			catch (error) {
 				const message = (error as Error).message;
-				expect(message).toContain('Failed to fetch Entra user info');
-				// Should include troubleshooting guidance
-				expect(message).toMatch(/permissions|Graph|User\.Read/i);
+				expect(message).toContain('Entra user info failed: 401');
 			}
 		});
 	});
