@@ -98,16 +98,46 @@ ENTRA_REDIRECT_URI=https://yourdomain.com/auth/entra/callback
 ### Get Authorization URL
 
 ```typescript
-const state = await entraAuth.generateState();
+const { state, stateBinding } = await entraAuth.generateState();
+req.session.oauthState = state;
+req.session.oauthStateBinding = stateBinding;
 const authUrl = entraAuth.getAuthorizationUrl(state);
-// Redirect user to authUrl
+await new Promise<void>((resolve, reject) => {
+	req.session.save((error) => error ? reject(error) : resolve());
+});
+res.redirect(authUrl);
 ```
+
+Store both values in the initiating browser's server-side session before
+redirecting. Send only `state` to Entra; keep `stateBinding` in the session.
 
 ### Handle Callback
 
 ```typescript
-// Pass the callback state when present for CSRF validation.
-const principal = await entraAuth.authenticate({ code, state });
+const code = req.query['code'];
+const state = req.query['state'];
+const stateBinding = req.session.oauthStateBinding;
+
+if (
+	typeof code !== 'string' ||
+	typeof state !== 'string' ||
+	req.session.oauthState !== state ||
+	typeof stateBinding !== 'string'
+) {
+	throw new Error('Invalid Entra callback');
+}
+
+delete req.session.oauthState;
+delete req.session.oauthStateBinding;
+await new Promise<void>((resolve, reject) => {
+	req.session.save((error) => error ? reject(error) : resolve());
+});
+
+const principal = await entraAuth.authenticate({
+	code,
+	state,
+	stateBinding,
+});
 if (principal) {
 	// User authenticated successfully
 	// Create session, JWT token, etc.
@@ -180,7 +210,13 @@ For a complete list of available scopes, see [Microsoft Entra permissions and co
 
 ```typescript
 try {
-	const principal = await entraAuth.authenticate({ code, state });
+	// Use code and state from the callback, and stateBinding from the
+	// initiating browser's server-side session after validating the match.
+	const principal = await entraAuth.authenticate({
+		code,
+		state,
+		stateBinding,
+	});
 	if (principal) {
 		// Store the principal in the application session.
 	}
