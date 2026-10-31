@@ -18,7 +18,7 @@ describe('EntraAuthentication', () => {
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		db: null as any,
 		clientId: testEnv.ENTRA_CLIENT_ID,
-		clientSecret: testEnv.ENTRA_CLIENT_SECRET,
+		clientSecret: 'test-client-secret',
 		tenantId: testEnv.ENTRA_TENANT_ID,
 		redirectUri: testEnv.ENTRA_REDIRECT_URI,
 		scopes: [
@@ -51,7 +51,7 @@ describe('EntraAuthentication', () => {
 	describe('Constructor', () => {
 		it('should initialize with provided options', () => {
 			expect(entraAuth['clientId']).toBe(testEnv.ENTRA_CLIENT_ID);
-			expect(entraAuth['clientSecret']).toBe(testEnv.ENTRA_CLIENT_SECRET);
+			expect(entraAuth['clientSecret']).toBe(mockEntraOptions.clientSecret);
 			expect(entraAuth['tenantId']).toBe(testEnv.ENTRA_TENANT_ID);
 			expect(entraAuth['redirectUri']).toBe(testEnv.ENTRA_REDIRECT_URI);
 		});
@@ -230,7 +230,7 @@ describe('EntraAuthentication', () => {
 
 			expect(body.get('client_id')).toBe(testEnv.ENTRA_CLIENT_ID);
 			expect(body.get('client_secret')).toBe(
-				testEnv.ENTRA_CLIENT_SECRET
+				mockEntraOptions.clientSecret
 			);
 			expect(body.get('code')).toBe('test-code');
 			expect(body.get('redirect_uri')).toBe(testEnv.ENTRA_REDIRECT_URI);
@@ -430,6 +430,7 @@ describe('EntraAuthentication', () => {
 				expect((error as Error).message).toContain(
 					'Entra user info failed: 403'
 				);
+				expect((error as Error).message).not.toContain('Error details');
 			}
 		});
 
@@ -520,8 +521,10 @@ describe('EntraAuthentication', () => {
 				String(fetchCall.args[1].body)
 			);
 
-			expect(body.get('client_id')).toBeTruthy();
-			expect(body.get('client_secret')).toBeTruthy();
+			expect(body.get('client_id')).toBe(testEnv.ENTRA_CLIENT_ID);
+			expect(body.get('client_secret')).toBe(
+				mockEntraOptions.clientSecret
+			);
 		});
 
 		it('should throw error when refresh fails', async () => {
@@ -645,6 +648,7 @@ describe('EntraAuthentication', () => {
 				expect((error as Error).message).toContain(
 					'Entra user info failed: 400'
 				);
+				expect((error as Error).message).not.toContain('Error details');
 				expect((error as Error).message)
 					.not.toContain(errorResponse);
 			}

@@ -9,6 +9,8 @@ import { createDatabase, runMigrations } from '../../test/database';
 // eslint-disable-next-line max-len
 import { AuthenticationSSOMigrations } from '@riao/authn-sso/authentication-sso-migrations';
 import { AuthMigrations } from '@riao/iam/auth/auth-migrations';
+import { Principal } from '@riao/iam';
+import { ProviderAuthenticationRejectedError } from '@riao/authn-sso';
 
 /**
  * Example: Express Web App with Entra SSO Authentication
@@ -21,19 +23,10 @@ import { AuthMigrations } from '@riao/iam/auth/auth-migrations';
  * - Using ts-appconfig for strongly-typed environment variables
  */
 
-// Types
-interface User {
-	id: string;
-	login: string;
-	name?: string;
-	entra_id?: string;
-}
-
 // Extend Express session to add custom properties
 declare module 'express-session' {
 	interface SessionData {
-		userId?: string;
-		user?: User;
+		principal?: Principal;
 		oauthState?: string;
 		oauthStateBinding?: string;
 	}
@@ -65,7 +58,7 @@ const db = createDatabase('entra-example');
 // Initialize Entra Authentication
 // NOTE: This requires database and userRepository to be initialized
 // See your database setup documentation for proper initialization
-const entraAuth = new EntraAuthentication({
+const entraAuth = new EntraAuthentication<Principal>({
 	db,
 	clientId: env.ENTRA_CLIENT_ID,
 	clientSecret: env.ENTRA_CLIENT_SECRET,
@@ -85,11 +78,19 @@ const entraAuth = new EntraAuthentication({
 	],
 });
 
+function logSafeFailure(operation: string, error: unknown): void {
+	console.error(operation, {
+		errorType: error instanceof Error ? error.name : typeof error,
+	});
+}
+
 /**
  * Step 1: Initiate Entra login
  * User clicks "Login with Entra" → redirected to Entra login page
  */
-app.get('/auth/entra/login', async (req: Request, res: Response) => {
+app.get('/auth/entra/login', async (
+	req: Request, res: Response
+): Promise<void> => {
 	try {
 		const { state, stateBinding } = await entraAuth.generateState();
 		req.session.oauthState = state;
@@ -101,8 +102,8 @@ app.get('/auth/entra/login', async (req: Request, res: Response) => {
 		res.redirect(authUrl);
 	}
 	catch (error) {
-		console.error('Failed to initiate Entra authentication:', error);
-		res.redirect('/login?error=authentication_unavailable');
+		logSafeFailure('Entra authentication setup failed', error);
+		res.status(503).json({ error: 'Authentication unavailable' });
 	}
 });
 
@@ -119,7 +120,7 @@ app.get(
 
 		// Check for errors from Entra
 		if (error) {
-			console.error('Entra error:', error);
+			console.warn('Entra OAuth callback returned an error');
 			res.redirect('/login?error=entra_auth_failed');
 			return;
 		}
@@ -171,8 +172,7 @@ app.get(
 					regenerateError ? reject(regenerateError) : resolve()
 				);
 			});
-			req.session.userId = String(principal.id);
-			req.session.user = principal as User;
+			req.session.principal = principal;
 
 			await new Promise<void>((resolve, reject) => {
 				req.session.save((saveError) =>
@@ -182,8 +182,8 @@ app.get(
 			res.redirect('/dashboard');
 		}
 		catch (error) {
-			console.error('Authentication error:', error);
-			res.redirect('/login?error=authentication_failed');
+			logSafeFailure('Entra authentication operation failed', error);
+			res.status(503).json({ error: 'Authentication unavailable' });
 		}
 	}
 );
@@ -192,7 +192,7 @@ app.get(
  * Step 3: Middleware to protect routes
  */
 function requireAuth(req: Request, res: Response, next: NextFunction): void {
-	if (!req.session?.userId) {
+	if (!req.session?.principal) {
 		res.redirect('/login');
 		return;
 	}
@@ -204,7 +204,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
  * Protected route example
  */
 app.get('/dashboard', requireAuth, (req: Request, res: Response) => {
-	const user = req.session.user;
+	const user = req.session.principal;
 
 	res.json({
 		message: 'Welcome to dashboard',
@@ -220,7 +220,7 @@ app.get('/dashboard', requireAuth, (req: Request, res: Response) => {
  * Get current user info
  */
 app.get('/api/me', requireAuth, (req: Request, res: Response) => {
-	res.json(req.session.user);
+	res.json(req.session.principal);
 });
 
 /**
@@ -246,9 +246,9 @@ app.post(
 	requireAuth,
 	async (req: Request, res: Response): Promise<void> => {
 		try {
-			const userId = req.session?.userId;
+			const principalId = req.session?.principal?.id;
 
-			if (!userId) {
+			if (!principalId) {
 				res.status(401).json({ error: 'Not authenticated' });
 				return;
 			}
@@ -259,7 +259,7 @@ app.post(
 			// 	concurrent environment, multiple refresh requests
 			// 	could cause race conditions. Consider implementing
 			// 	optimistic locking or transaction-based token updates.
-			const tokenRecord = await entraAuth.getStoredToken(userId);
+			const tokenRecord = await entraAuth.getStoredToken(principalId);
 
 			if (!tokenRecord || !tokenRecord.refresh_token) {
 				res.status(401).json({ error: 'No refresh token available' });
@@ -267,7 +267,7 @@ app.post(
 			}
 
 			// Refresh the access token
-			const newAccessToken = await entraAuth.refreshAccessToken(userId);
+			const newAccessToken = await entraAuth.refreshAccessToken(principalId);
 
 			if (!newAccessToken) {
 				res.status(401).json({ error: 'Token refresh failed' });
@@ -277,8 +277,12 @@ app.post(
 			res.json({ message: 'Token refreshed successfully' });
 		}
 		catch (error) {
-			console.error('Token refresh error:', error);
-			res.status(500).json({ error: 'Token refresh failed' });
+			logSafeFailure('Entra token refresh operation failed', error);
+			if (error instanceof ProviderAuthenticationRejectedError) {
+				res.status(401).json({ error: 'Reauthentication required' });
+				return;
+			}
+			res.status(503).json({ error: 'Token refresh unavailable' });
 		}
 	}
 );
@@ -287,7 +291,7 @@ app.post(
  * Login page (simple HTML)
  */
 app.get('/login', (req: Request, res: Response): void => {
-	const error = (req.query['error'] as string) || '';
+	const error = req.query['error'] ? 'Authentication failed. Please retry.' : '';
 
 	res.send(`
     <!DOCTYPE html>
@@ -319,7 +323,7 @@ app.get('/login', (req: Request, res: Response): void => {
  * Home page
  */
 app.get('/', (req: Request, res: Response): void => {
-	if (req.session?.userId) {
+	if (req.session?.principal) {
 		res.redirect('/dashboard');
 	}
 	else {
@@ -352,7 +356,7 @@ async function initialize() {
 }
 
 initialize().catch((err) => {
-	console.error('Failed to initialize application:', err);
+	logSafeFailure('Application initialization failed', err);
 	process.exit(1);
 });
 

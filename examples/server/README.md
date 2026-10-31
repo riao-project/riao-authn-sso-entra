@@ -6,7 +6,7 @@ This example demonstrates how to integrate Microsoft Entra SSO authentication in
 
 This is a complete, working example that shows:
 
-- **OAuth 2.0 Flow**: Authorization code flow with PKCE support
+- **OAuth 2.0 Flow**: Authorization code flow
 - **Session Management**: Express session middleware with secure cookies
 - **Protected Routes**: Middleware to require authentication
 - **Token Refresh**: Using `offline_access` scope for persistent sessions
@@ -109,17 +109,7 @@ NODE_ENV=development
 
 ### 5. Database Setup
 
-Initialize your database with the Entra migration:
-
-```typescript
-// In your app initialization
-import { EntraAuthentication } from '@riao/iam';
-import { Migration } from '@riao/dbal';
-
-// Run migration
-const migration = new EntraAuthenticationMigration();
-await migration.up(database);
-```
+Run the IAM migrations first, then register and run the complete ordered SSO migration package.
 
 ### 6. Run the App
 
@@ -153,17 +143,19 @@ GET /auth/entra/callback?code=...&state=...
 Validate and consume the browser-bound state
 Exchange code for access token (backend-to-backend)
 Fetch user info from Microsoft Graph
-Create or link principal
+Resolve an active principal (create one only if none exists)
 ↓
 Regenerate the session ID, then store the authenticated principal
 Redirect to dashboard
 ```
 
+The browser flow stores state and its binding in the initiating session, then validates and consumes both during callback handling. After authentication, the example regenerates the session ID before storing the principal.
+
 ### 4. Subsequent requests
 ```
 GET /dashboard
 ↓
-Middleware checks session.userId
+Middleware checks session.principal
 If present → allow access
 If missing → redirect to login
 ```
@@ -221,8 +213,11 @@ If using `offline_access`, refresh tokens when needed:
 
 ```typescript
 app.post('/api/refresh-token', async (req: Request, res: Response) => {
-  const userId = req.session.userId;
-  const newAccessToken = await entraAuth.refreshAccessToken(userId);
+  const principalId = req.session.principal?.id;
+  if (!principalId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+  const newAccessToken = await entraAuth.refreshAccessToken(principalId);
   res.json({ accessToken: newAccessToken });
 });
 ```
@@ -306,10 +301,11 @@ const isProduction = env.NODE_ENV === 'production';  // boolean
 
 The app handles common errors:
 
-- **Missing credentials**: Redirects to login with error message
-- **Entra errors**: Logged and user redirected to login
+- **Expected authentication rejection**: `authenticate` returns `null`; the example redirects to login with a generic failure message
+- **Operational failures**: `authenticate` throws; the example logs only a safe error classification and returns a generic unavailable response
 - **Session errors**: Returns 500 response
-- **Token refresh failure**: Returns 401 (requires re-login)
+- **Missing or rejected refresh credentials**: Returns 401 and requires reauthentication
+- **Operational token refresh failures**: Returns a generic 503 response
 
 ## Security Considerations
 
@@ -381,7 +377,8 @@ The app handles common errors:
 ### User not found after callback
 - Check that `User.Read` scope is granted in API permissions
 - Verify Microsoft Graph API call succeeds (check error message)
-- The error message will provide details about what permission is missing
+- Inspect the app registration permissions when user-info requests fail;
+  public error messages intentionally omit provider response details.
 
 ### Session not persisting
 - Check browser cookies are enabled
