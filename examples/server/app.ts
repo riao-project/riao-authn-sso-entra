@@ -3,7 +3,6 @@
 import express, { NextFunction, Request, Response } from 'express';
 import session from 'express-session';
 import { EntraAuthentication } from '../../src/authentication-entra';
-import crypto from 'crypto';
 import { env } from './env';
 import { maindb } from '../../database/main';
 import { createDatabase, runMigrations } from '../../test/database';
@@ -35,6 +34,8 @@ declare module 'express-session' {
 	interface SessionData {
 		userId?: string;
 		user?: User;
+		oauthState?: string;
+		oauthStateBinding?: string;
 	}
 }
 
@@ -88,21 +89,21 @@ const entraAuth = new EntraAuthentication({
  * Step 1: Initiate Entra login
  * User clicks "Login with Entra" → redirected to Entra login page
  */
-app.get('/auth/entra/login', (req: Request, res: Response): void => {
-	// Generate a random state for CSRF protection
-	const state = crypto.randomUUID();
-
-	// Store state in session (verify it on callback)
-	req.session.save((err) => {
-		if (err) {
-			res.status(500).json({ error: 'Session error' });
-			return;
-		}
-
-		// Get authorization URL and redirect user to Entra
+app.get('/auth/entra/login', async (req: Request, res: Response) => {
+	try {
+		const { state, stateBinding } = await entraAuth.generateState();
+		req.session.oauthState = state;
+		req.session.oauthStateBinding = stateBinding;
 		const authUrl = entraAuth.getAuthorizationUrl(state);
+		await new Promise<void>((resolve, reject) => {
+			req.session.save((error) => error ? reject(error) : resolve());
+		});
 		res.redirect(authUrl);
-	});
+	}
+	catch (error) {
+		console.error('Failed to initiate Entra authentication:', error);
+		res.redirect('/login?error=authentication_unavailable');
+	}
 });
 
 /**
@@ -112,9 +113,9 @@ app.get('/auth/entra/login', (req: Request, res: Response): void => {
 app.get(
 	'/auth/entra/callback',
 	async (req: Request, res: Response): Promise<void> => {
-		const code = req.query['code'] as string | undefined;
-		const state = req.query['state'] as string | undefined;
-		const error = req.query['error'] as string | undefined;
+		const code = req.query['code'];
+		const state = req.query['state'];
+		const error = req.query['error'];
 
 		// Check for errors from Entra
 		if (error) {
@@ -124,39 +125,61 @@ app.get(
 		}
 
 		// Validate code and state
-		if (!code || typeof code !== 'string') {
+		if (typeof code !== 'string' || !code) {
 			res.redirect('/login?error=missing_code');
 			return;
 		}
 
-		if (!state || typeof state !== 'string') {
+		if (typeof state !== 'string' || !state) {
 			res.redirect('/login?error=missing_state');
+			return;
+		}
+		const stateBinding = req.session.oauthStateBinding;
+		if (
+			!req.session.oauthState ||
+			req.session.oauthState !== state ||
+			typeof stateBinding !== 'string' ||
+			!stateBinding
+		) {
+			res.redirect('/login?error=invalid_state');
 			return;
 		}
 
 		try {
+			delete req.session.oauthState;
+			delete req.session.oauthStateBinding;
+			await new Promise<void>((resolve, reject) => {
+				req.session.save((saveError) =>
+					saveError ? reject(saveError) : resolve()
+				);
+			});
+
 			// Exchange authorization code for tokens and get user info
-			const principal = await entraAuth.authenticate({ code });
+			const principal = await entraAuth.authenticate({
+				code,
+				state,
+				stateBinding,
+			});
 
 			if (!principal) {
 				res.redirect('/login?error=authentication_failed');
 				return;
 			}
 
-			// Store user ID in session
+			await new Promise<void>((resolve, reject) => {
+				req.session.regenerate((regenerateError) =>
+					regenerateError ? reject(regenerateError) : resolve()
+				);
+			});
 			req.session.userId = String(principal.id);
 			req.session.user = principal as User;
 
-			// Save session
-			req.session.save((err) => {
-				if (err) {
-					res.status(500).json({ error: 'Session error' });
-					return;
-				}
-
-				// Redirect to dashboard or requested page
-				res.redirect('/dashboard');
+			await new Promise<void>((resolve, reject) => {
+				req.session.save((saveError) =>
+					saveError ? reject(saveError) : resolve()
+				);
 			});
+			res.redirect('/dashboard');
 		}
 		catch (error) {
 			console.error('Authentication error:', error);
