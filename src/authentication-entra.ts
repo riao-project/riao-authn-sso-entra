@@ -116,21 +116,21 @@ export class EntraAuthentication<
 		validateProviderUser(
 			data, ['userPrincipalName', 'mail', 'displayName'], true
 		);
-		if (!isProviderString(data['userPrincipalName']) &&
-			!isProviderString(data['mail'])) {
-			throw new Error('Malformed Entra user response: missing login');
-		}
 		const userData = data as unknown as {
 			id: string;
 			userPrincipalName?: string;
 			mail?: string;
 			displayName?: string;
 		};
+		const login = isProviderString(userData.userPrincipalName) ?
+			userData.userPrincipalName : userData.mail;
+		if (!isProviderString(login)) {
+			throw new Error('Malformed Entra user response: missing login');
+		}
 		return {
 			id: userData.id,
-			login: userData.userPrincipalName || userData.mail || '',
-			name: userData.displayName || userData.userPrincipalName ||
-				userData.mail || '',
+			login,
+			name: userData.displayName || login,
 			type: 'user',
 		};
 	}

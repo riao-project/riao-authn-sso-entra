@@ -323,6 +323,30 @@ describe('EntraAuthentication', () => {
 			expect(userInfo.login).toBe('user@example.com');
 		});
 
+		it(
+			'should use mail when userPrincipalName is whitespace-only',
+			async () => {
+				const mockUserData = {
+					id: 'user-456',
+					userPrincipalName: '   ',
+					mail: 'user@example.com',
+				};
+
+				spyOn(global, 'fetch').and.returnValue(
+					Promise.resolve(
+						new Response(JSON.stringify(mockUserData), {
+							status: 200,
+						})
+					)
+				);
+
+				const userInfo = await entraAuth['getUserInfo']('access-token');
+
+				expect(userInfo.login).toBe('user@example.com');
+				expect(userInfo.name).toBe('user@example.com');
+			}
+		);
+
 		it('should use displayName for name field', async () => {
 			const mockUserData = {
 				id: 'user-789',
