@@ -228,8 +228,10 @@ describe('EntraAuthentication', () => {
 				String(fetchCall.args[1].body)
 			);
 
-			expect(body.get('client_id')).toBeTruthy();
-			expect(body.get('client_secret')).toBeTruthy();
+			expect(body.get('client_id')).toBe(testEnv.ENTRA_CLIENT_ID);
+			expect(body.get('client_secret')).toBe(
+				testEnv.ENTRA_CLIENT_SECRET
+			);
 			expect(body.get('code')).toBe('test-code');
 			expect(body.get('redirect_uri')).toBe(testEnv.ENTRA_REDIRECT_URI);
 			expect(body.get('grant_type')).toBe('authorization_code');
