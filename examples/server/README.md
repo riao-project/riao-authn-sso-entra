@@ -109,10 +109,7 @@ NODE_ENV=development
 
 ### 5. Database Setup
 
-Run the IAM migrations first, then register and run the complete ordered SSO
-migration package. The package is provider-neutral and creates the SSO token
-and state tables used by this Entra driver; see the main Entra README for the
-migration registration example.
+Run the IAM migrations first, then register and run the complete ordered SSO migration package.
 
 ### 6. Run the App
 
@@ -152,10 +149,7 @@ Store the authenticated principal in the session
 Redirect to dashboard
 ```
 
-The driver accepts callbacks without state for API compatibility. Browser flows
-should always generate and return state; supplied state is checked against the
-driver's stored record. The driver does not bind state to a browser session or
-regenerate the application's session.
+The driver accepts callbacks without state for API compatibility. Browser flows should always generate and return state; supplied state is checked against the driver's stored record. The driver does not bind state to a browser session or regenerate the application's session.
 
 ### 4. Subsequent requests
 ```
@@ -197,10 +191,6 @@ With `offline_access`, the system stores a refresh token and can:
 - Obtain new access tokens without user interaction
 - Keep users logged in across sessions
 - Implement auto-refresh on token expiration
-
-Refresh-token transport, provider, and storage failures are operational errors;
-the example should return a generic server error for those failures. Missing
-or rejected refresh credentials require the user to authenticate again.
 
 ### Session Management
 
@@ -311,13 +301,10 @@ const isProduction = env.NODE_ENV === 'production';  // boolean
 
 The app handles common errors:
 
-- **Expected authentication rejection**: `authenticate` returns `null`; the
-  example redirects to login with a generic failure message
-- **Operational failures**: `authenticate` throws; the example logs only a
-  safe error classification and returns a generic unavailable response
+- **Expected authentication rejection**: `authenticate` returns `null`; the example redirects to login with a generic failure message
+- **Operational failures**: `authenticate` throws; the example logs only a safe error classification and returns a generic unavailable response
 - **Session errors**: Returns 500 response
-- **Missing or rejected refresh credentials**: Returns 401 and requires
-  reauthentication
+- **Missing or rejected refresh credentials**: Returns 401 and requires reauthentication
 - **Operational token refresh failures**: Returns a generic 503 response
 
 ## Security Considerations
