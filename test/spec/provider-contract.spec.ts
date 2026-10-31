@@ -26,6 +26,7 @@ describe('Entra provider contract (isolated)', () => {
 		auth = new EntraAuthentication({
 			...options, stateExpiryMinutes: 2,
 			authenticationProtection: protection,
+			getProtectionSubject: () => 'test-subject',
 			encryptionPublicKey: keys.publicKey,
 			encryptionPrivateKey: keys.privateKey,
 		});

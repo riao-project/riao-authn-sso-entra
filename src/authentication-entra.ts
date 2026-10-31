@@ -3,7 +3,10 @@ import {
 	SSOUserInfo,
 	SSOTokenResponse,
 	SSOAuthenticationOptions,
-	throwProviderResponseError,
+	requestProviderJson,
+	validateTokenResponse,
+	validateProviderUser,
+	isProviderString,
 } from '@riao/authn-sso';
 import { Principal } from '@riao/iam';
 
@@ -33,10 +36,7 @@ export class EntraAuthentication<
 	protected readonly scopes: string[];
 
 	constructor(options: EntraAuthenticationOptions) {
-		super({
-			...options,
-			provider: 'entra',
-		});
+		super({ ...options, provider: 'entra' });
 		this.clientId = options.clientId;
 		this.clientSecret = options.clientSecret;
 		this.tenantId = options.tenantId;
@@ -84,8 +84,7 @@ export class EntraAuthentication<
 		const tokenUrl =
 			`https://login.microsoftonline.com/${this.tenantId}` +
 			'/oauth2/v2.0/token';
-
-		const response = await fetch(tokenUrl, {
+		const data = await requestProviderJson(tokenUrl, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/x-www-form-urlencoded',
@@ -98,48 +97,40 @@ export class EntraAuthentication<
 				grant_type: 'authorization_code',
 				scope: this.scopes.join(' '),
 			}).toString(),
-		});
-		if (!response.ok) {
-			await throwProviderResponseError(
-				'Entra token exchange', response
-			);
-		}
-		return response.json() as Promise<SSOTokenResponse>;
+		}, 'Entra token exchange', this.requestTimeoutMs);
+		return validateTokenResponse(data);
 	}
 
 	/**
 	 * Fetch user information from Microsoft Graph API
 	 */
 	protected async getUserInfo(accessToken: string): Promise<SSOUserInfo> {
-		const response = await fetch(
+		const data = await requestProviderJson(
 			'https://graph.microsoft.com/v1.0/me', {
 				method: 'GET',
 				headers: {
 					Authorization: `Bearer ${accessToken}`,
 					'Content-Type': 'application/json',
 				},
-			}
+			}, 'Entra user info', this.requestTimeoutMs, true);
+		validateProviderUser(
+			data, ['userPrincipalName', 'mail', 'displayName'], true
 		);
-		if (!response.ok) {
-			await throwProviderResponseError(
-				'Entra user info', response, true
-			);
-		}
-		const userData = (await response.json()) as {
+		const userData = data as unknown as {
 			id: string;
 			userPrincipalName?: string;
 			mail?: string;
 			displayName?: string;
 		};
-
+		const login = isProviderString(userData.userPrincipalName) ?
+			userData.userPrincipalName : userData.mail;
+		if (!isProviderString(login)) {
+			throw new Error('Malformed Entra user response: missing login');
+		}
 		return {
 			id: userData.id,
-			login: userData.userPrincipalName || userData.mail || '',
-			name:
-				userData.displayName ||
-				userData.userPrincipalName ||
-				userData.mail ||
-				'',
+			login,
+			name: userData.displayName || login,
 			type: 'user',
 		};
 	}
@@ -153,8 +144,7 @@ export class EntraAuthentication<
 		const tokenUrl =
 			`https://login.microsoftonline.com/${this.tenantId}` +
 			'/oauth2/v2.0/token';
-
-		const response = await fetch(tokenUrl, {
+		const data = await requestProviderJson(tokenUrl, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/x-www-form-urlencoded',
@@ -166,12 +156,7 @@ export class EntraAuthentication<
 				grant_type: 'refresh_token',
 				scope: this.scopes.join(' '),
 			}).toString(),
-		});
-		if (!response.ok) {
-			await throwProviderResponseError(
-				'Entra token refresh', response
-			);
-		}
-		return response.json() as Promise<SSOTokenResponse>;
+		}, 'Entra token refresh', this.requestTimeoutMs);
+		return validateTokenResponse(data);
 	}
 }

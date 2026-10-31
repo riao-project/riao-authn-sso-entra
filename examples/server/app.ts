@@ -27,6 +27,8 @@ import { ProviderAuthenticationRejectedError } from '@riao/authn-sso';
 declare module 'express-session' {
 	interface SessionData {
 		principal?: Principal;
+		oauthState?: string;
+		oauthStateBinding?: string;
 	}
 }
 
@@ -90,8 +92,14 @@ app.get('/auth/entra/login', async (
 	req: Request, res: Response
 ): Promise<void> => {
 	try {
-		const state = await entraAuth.generateState();
-		res.redirect(entraAuth.getAuthorizationUrl(state));
+		const { state, stateBinding } = await entraAuth.generateState();
+		req.session.oauthState = state;
+		req.session.oauthStateBinding = stateBinding;
+		const authUrl = entraAuth.getAuthorizationUrl(state);
+		await new Promise<void>((resolve, reject) => {
+			req.session.save((error) => error ? reject(error) : resolve());
+		});
+		res.redirect(authUrl);
 	}
 	catch (error) {
 		logSafeFailure('Entra authentication setup failed', error);
@@ -106,12 +114,9 @@ app.get('/auth/entra/login', async (
 app.get(
 	'/auth/entra/callback',
 	async (req: Request, res: Response): Promise<void> => {
-		const code = req.query['code'] as string | undefined;
-		const stateValue = req.query['state'];
-		const state = typeof stateValue === 'string'
-			? stateValue
-			: undefined;
-		const error = req.query['error'] as string | undefined;
+		const code = req.query['code'];
+		const state = req.query['state'];
+		const error = req.query['error'];
 
 		// Check for errors from Entra
 		if (error) {
@@ -121,42 +126,60 @@ app.get(
 		}
 
 		// Validate code and state
-		if (!code || typeof code !== 'string') {
+		if (typeof code !== 'string' || !code) {
 			res.redirect('/login?error=missing_code');
 			return;
 		}
 
-		if (stateValue !== undefined && typeof stateValue !== 'string') {
-			res.redirect('/login?error=authentication_failed');
+		if (typeof state !== 'string' || !state) {
+			res.redirect('/login?error=missing_state');
+			return;
+		}
+		const stateBinding = req.session.oauthStateBinding;
+		if (
+			!req.session.oauthState ||
+			req.session.oauthState !== state ||
+			typeof stateBinding !== 'string' ||
+			!stateBinding
+		) {
+			res.redirect('/login?error=invalid_state');
 			return;
 		}
 
 		try {
+			delete req.session.oauthState;
+			delete req.session.oauthStateBinding;
+			await new Promise<void>((resolve, reject) => {
+				req.session.save((saveError) =>
+					saveError ? reject(saveError) : resolve()
+				);
+			});
+
 			// Exchange authorization code for tokens and get user info
-			const credentials: { code: string; state?: string } = { code };
-			if (state !== undefined) {
-				credentials.state = state;
-			}
-			const principal = await entraAuth.authenticate(credentials);
+			const principal = await entraAuth.authenticate({
+				code,
+				state,
+				stateBinding,
+			});
 
 			if (!principal) {
 				res.redirect('/login?error=authentication_failed');
 				return;
 			}
 
-			// Store the principal for downstream authorization.
+			await new Promise<void>((resolve, reject) => {
+				req.session.regenerate((regenerateError) =>
+					regenerateError ? reject(regenerateError) : resolve()
+				);
+			});
 			req.session.principal = principal;
 
-			// Save session
-			req.session.save((err) => {
-				if (err) {
-					res.status(500).json({ error: 'Session error' });
-					return;
-				}
-
-				// Redirect to dashboard or requested page
-				res.redirect('/dashboard');
+			await new Promise<void>((resolve, reject) => {
+				req.session.save((saveError) =>
+					saveError ? reject(saveError) : resolve()
+				);
 			});
+			res.redirect('/dashboard');
 		}
 		catch (error) {
 			logSafeFailure('Entra authentication operation failed', error);

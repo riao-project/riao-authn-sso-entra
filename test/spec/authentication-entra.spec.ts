@@ -224,17 +224,17 @@ describe('EntraAuthentication', () => {
 			await entraAuth.exchangeAuthorizationCode('test-code');
 
 			const fetchCall = (global.fetch as jasmine.Spy).calls.mostRecent();
-			const body = fetchCall.args[1].body;
+			const body = new URLSearchParams(
+				String(fetchCall.args[1].body)
+			);
 
-			expect(body).toContain(`client_id=${testEnv.ENTRA_CLIENT_ID}`);
-			expect(body).toContain(
-				`client_secret=${mockEntraOptions.clientSecret}`
+			expect(body.get('client_id')).toBe(testEnv.ENTRA_CLIENT_ID);
+			expect(body.get('client_secret')).toBe(
+				mockEntraOptions.clientSecret
 			);
-			expect(body).toContain('code=test-code');
-			expect(body).toContain(
-				`redirect_uri=${encodeURIComponent(testEnv.ENTRA_REDIRECT_URI)}`
-			);
-			expect(body).toContain('grant_type=authorization_code');
+			expect(body.get('code')).toBe('test-code');
+			expect(body.get('redirect_uri')).toBe(testEnv.ENTRA_REDIRECT_URI);
+			expect(body.get('grant_type')).toBe('authorization_code');
 		});
 
 		it('should throw error when token exchange fails', async () => {
@@ -270,7 +270,9 @@ describe('EntraAuthentication', () => {
 				fail('Expected error to be thrown');
 			}
 			catch (error) {
-				expect((error as Error).message).toContain('provider unavailable');
+				expect((error as Error).message).toContain(
+					'Entra token exchange failed: unavailable'
+				);
 			}
 		});
 	});
@@ -322,6 +324,30 @@ describe('EntraAuthentication', () => {
 
 			expect(userInfo.login).toBe('user@example.com');
 		});
+
+		it(
+			'should use mail when userPrincipalName is whitespace-only',
+			async () => {
+				const mockUserData = {
+					id: 'user-456',
+					userPrincipalName: '   ',
+					mail: 'user@example.com',
+				};
+
+				spyOn(global, 'fetch').and.returnValue(
+					Promise.resolve(
+						new Response(JSON.stringify(mockUserData), {
+							status: 200,
+						})
+					)
+				);
+
+				const userInfo = await entraAuth['getUserInfo']('access-token');
+
+				expect(userInfo.login).toBe('user@example.com');
+				expect(userInfo.name).toBe('user@example.com');
+			}
+		);
 
 		it('should use displayName for name field', async () => {
 			const mockUserData = {
@@ -402,9 +428,8 @@ describe('EntraAuthentication', () => {
 			}
 			catch (error) {
 				expect((error as Error).message).toContain(
-					'Failed to fetch Entra user info'
+					'Entra user info failed: 403'
 				);
-				expect((error as Error).message).toContain('403');
 				expect((error as Error).message).not.toContain('Error details');
 			}
 		});
@@ -492,11 +517,13 @@ describe('EntraAuthentication', () => {
 			await entraAuth['exchangeRefreshToken']('refresh-token');
 
 			const fetchCall = (global.fetch as jasmine.Spy).calls.mostRecent();
-			const body = fetchCall.args[1].body;
+			const body = new URLSearchParams(
+				String(fetchCall.args[1].body)
+			);
 
-			expect(body).toContain(`client_id=${testEnv.ENTRA_CLIENT_ID}`);
-			expect(body).toContain(
-				`client_secret=${mockEntraOptions.clientSecret}`
+			expect(body.get('client_id')).toBe(testEnv.ENTRA_CLIENT_ID);
+			expect(body.get('client_secret')).toBe(
+				mockEntraOptions.clientSecret
 			);
 		});
 
@@ -602,7 +629,7 @@ describe('EntraAuthentication', () => {
 
 	describe('Error handling', () => {
 		// eslint-disable-next-line max-len
-		it('should include detailed error message when Graph API call fails', async () => {
+		it('should not expose Graph API response bodies on failure', async () => {
 			const errorResponse = 'Invalid scope requested';
 			spyOn(global, 'fetch').and.returnValue(
 				Promise.resolve(
@@ -619,9 +646,11 @@ describe('EntraAuthentication', () => {
 			}
 			catch (error) {
 				expect((error as Error).message).toContain(
-					'Failed to fetch Entra user info'
+					'Entra user info failed: 400'
 				);
 				expect((error as Error).message).not.toContain('Error details');
+				expect((error as Error).message)
+					.not.toContain(errorResponse);
 			}
 		});
 

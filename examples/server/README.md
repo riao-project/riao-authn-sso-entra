@@ -126,7 +126,7 @@ Visit `http://localhost:3000`
 ```
 GET /auth/entra/login
 ↓
-Generates random state (CSRF protection)
+Generates and stores callback state in the initiating browser session
 Redirects user to Entra login URL
 ```
 
@@ -140,16 +140,16 @@ Entra validates and redirects back with authorization code
 ```
 GET /auth/entra/callback?code=...&state=...
 ↓
-Validate state when the callback supplies it (CSRF check)
+Validate and consume the browser-bound state
 Exchange code for access token (backend-to-backend)
 Fetch user info from Microsoft Graph
 Resolve an active principal (create one only if none exists)
 ↓
-Store the authenticated principal in the session
+Regenerate the session ID, then store the authenticated principal
 Redirect to dashboard
 ```
 
-The driver accepts callbacks without state for API compatibility. Browser flows should always generate and return state; supplied state is checked against the driver's stored record. The driver does not bind state to a browser session or regenerate the application's session.
+The browser flow stores state and its binding in the initiating session, then validates and consumes both during callback handling. After authentication, the example regenerates the session ID before storing the principal.
 
 ### 4. Subsequent requests
 ```
